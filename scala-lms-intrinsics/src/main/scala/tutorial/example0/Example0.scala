@@ -24,6 +24,7 @@
 
 package tutorial.example0
 
+import ch.ethz.acl.commons.cir.extensions.{CGenForOps, ForLoopExp}
 import ch.ethz.acl.intrinsics._
 import ch.ethz.acl.passera.unsigned._
 
@@ -45,6 +46,7 @@ object Example0 {
     with IntrinsicsArrays
     with AVX
     with AVX2
+    with ForLoopExp
   { self =>
     //
     // Since the Intrinsics also work with unsigned types
@@ -68,6 +70,7 @@ object Example0 {
       with CGenSeqOps
       with CGenAVX
       with CGenAVX2
+      with CGenForOps
     {
       val IR: self.type = self
       //
@@ -97,11 +100,14 @@ object Example0 {
   // the result to array b. LMS assumes that both a and b are immutable.
   // Therefore, lets inform LMS that b will hold our results.
   //
-  def add_first_4elements(a: Rep[Array[Double]], b: Rep[Array[Double]]): Rep[Unit] = {
-    val b_write = reflectMutableSym(b.asInstanceOf[Sym[Array[Double]]])
-    val tmp1 = _mm256_loadu_pd(a, Const(0))
-    val tmp2 = _mm256_add_pd(tmp1, tmp1)
-    _mm256_storeu_pd(b_write, tmp2, Const(0))
+  def pointwise_add_simd(x: Rep[Array[Double]], y: Rep[Array[Double]], z_sym: Rep[Array[Double]], N: Rep[Int]): Rep[Unit] = {
+    val z = reflectMutableSym(z_sym.asInstanceOf[Sym[Array[Double]]])
+    loop(N, Const(4), (i: Rep[Int]) => {
+      val a = _mm256_loadu_pd(x, i)
+      val b = _mm256_loadu_pd(y, i)
+      val r = _mm256_add_pd(a, b)
+      _mm256_storeu_pd(z, r, i)
+    })
   }
 
   def main(args: Array[String]) : Unit = {
@@ -110,7 +116,7 @@ object Example0 {
     //
     // generate the C code for the add_first_8elements
     //
-    codegen.emitSource2(add_first_4elements, "add_first_4elements", writer)
+    codegen.emitSource4(pointwise_add_simd, "pointwise_add_simd", writer)
     //
     // Print the AVX2 headers
     //

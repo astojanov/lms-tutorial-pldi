@@ -34,8 +34,52 @@ object Example2 extends SVectors {
 
   var currentISA = AVX
 
+  def dot[T:Numeric:Typ](x: Rep[Array[T]], y: Rep[Array[T]], len: Rep[Int]): Rep[T] = {
+
+    import ImplicitLift._
+    val ut = new SUtil[T](currentISA)
+    val acc = ut.zero().toVar()
+    val sx = new SArray[T](currentISA, x, len)
+    val sy = new SArray[T](currentISA, y, len)
+
+    loop(sx.size(), (i: Rep[Int]) => {
+      val tmp = sx(i) * sy(i)
+      acc.assign(acc.read() + tmp)
+    })
+
+    var result = acc.read().reduce()
+
+    loop(len - sx.scalar_size(), (i: Rep[Int]) => {
+      val idx = sx.scalar_size() + i
+      val tmp = x(idx) + y(idx)
+      result += tmp
+    })
+
+    result
+  }
+
+  def compileWithParams[T:Numeric:Typ](isa: ISA, fName: String): Unit = {
+
+    val tp = implicitly[Typ[T]]
+    println()
+    println("/* ======================================================================================= */")
+    println("/* Dot Product using " + tp.toString + " ISA: " + isa.toString + " */")
+    println("/* ======================================================================================= */")
+
+    currentISA = isa
+    val x   = fresh[Array[T]]
+    val y   = fresh[Array[T]]
+    val len = fresh[Int]
+    val block = reifyEffects(dot[T](x, y, len))
+    implicit val mL = List(typ[Array[T]], typ[Array[T]], typ[Int]).asInstanceOf[List[Typ[Any]]]
+    compile(List(x, y, len), block, fName)
+  }
+
   def main(arg: Array[String]): Unit = {
-    println("Our job is to implement a dot product which is type and ISA independent using SVectors library")
+    compileWithParams[Double](AVX, "dot_AVX_Double")
+    compileWithParams[Float](AVX, "dot_AVX_Float")
+    compileWithParams[Double](SSE, "dot_SSE_Double")
+    compileWithParams[Byte](SSE, "dot_SSE_Int")
   }
 
 }
